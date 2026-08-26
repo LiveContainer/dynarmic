@@ -15,6 +15,8 @@
 #    include <mach/mach.h>
 #    include <mach/vm_map.h>
 
+#    include <CoreFoundation/CoreFoundation.h>
+#    include <IOKit/IOKitLib.h>
 #    include <TargetConditionals.h>
 #    include <libkern/OSCacheControl.h>
 #    include <pthread.h>
@@ -41,20 +43,27 @@ public:
         if (m_wmem == nullptr)
             throw std::bad_alloc{};
 #elif defined(__APPLE__)
-        m_wmem = (std::uint32_t*)mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
-        if (m_wmem == MAP_FAILED)
+        m_xmem = (std::uint32_t*)mmap(nullptr, size, PROT_READ | PROT_EXEC, MAP_ANON | MAP_PRIVATE, -1, 0);
+        if (m_xmem == MAP_FAILED)
             throw std::bad_alloc{};
 
-        vm_address_t executable_address = 0;
+        bool runningOnIOS26 = false;
+        if (__builtin_available(iOS 19.0, *))
+            // Quick and dirty way to check if we're running on iOS...
+            runningOnIOS26 = ::access("/private/preboot", F_OK) == 0;
+        if (runningOnIOS26 && DeviceHasTXM())
+            JIT26PrepareRegion(m_xmem, m_size);
+
+        vm_address_t wmem = 0;
         vm_prot_t cur_prot, max_prot;
-        kern_return_t ret = vm_remap(mach_task_self(), &executable_address, size, 0, VM_FLAGS_ANYWHERE | VM_FLAGS_RANDOM_ADDR, mach_task_self(), reinterpret_cast<vm_address_t>(m_wmem), false, &cur_prot, &max_prot, VM_INHERIT_NONE);
+        kern_return_t ret = vm_remap(mach_task_self(), &wmem, size, 0, VM_FLAGS_ANYWHERE | VM_FLAGS_RANDOM_ADDR, mach_task_self(), reinterpret_cast<vm_address_t>(m_xmem), false, &cur_prot, &max_prot, VM_INHERIT_NONE);
         if (ret != KERN_SUCCESS) {
-            munmap(m_wmem, m_size);
+            munmap(m_xmem, m_size);
             throw std::bad_alloc{};
         }
-        m_xmem = reinterpret_cast<std::uint32_t*>(executable_address);
+        m_wmem = reinterpret_cast<std::uint32_t*>(wmem);
 
-        if (mprotect(m_xmem, size, PROT_READ | PROT_EXEC) != 0) {
+        if (mprotect(m_wmem, size, PROT_READ | PROT_WRITE) != 0) {
             munmap(m_xmem, m_size);
             munmap(m_wmem, m_size);
             throw std::bad_alloc{};
@@ -170,6 +179,34 @@ protected:
     std::uint32_t* m_xmem = nullptr;
     std::uint32_t* m_wmem = nullptr;
     std::size_t m_size = 0;
+
+#if defined(__APPLE__)
+    bool DeviceHasTXM() const {
+        // https://github.com/opa334/Dopamine/commit/e8438b4a64ead3997d2c70a575431cb1b4070fb9
+        io_registry_entry_t memory_map = IORegistryEntryFromPath(0, "IODeviceTree:/chosen/memory-map");
+        if (memory_map == IO_OBJECT_NULL)
+            return false;
+        
+        CFArrayRef keys = (CFArrayRef)IORegistryEntryCreateCFProperty(memory_map, CFSTR(kIORegistryEntryPropertyKeysKey), 0, 0);
+        IOObjectRelease(memory_map);
+        if (!keys)
+            return false;
+        
+        CFRange range = CFRangeMake(0, CFArrayGetCount(keys));
+        bool hasTXM = CFArrayContainsValue(keys, range, CFSTR("SPTM")) && CFArrayContainsValue(keys, range, CFSTR("TXM"));
+        CFRelease(keys);
+        return hasTXM;
+    }
+    
+    __attribute__((noinline,optnone,naked))
+    void JIT26PrepareRegion(void *addr, std::size_t len) const {
+        asm("mov x0, x1 \n"
+            "mov x1, x2 \n"
+            "mov x16, #1 \n"
+            "brk #0xf00d \n"
+            "ret");
+    }
+#endif
 };
 
 }  // namespace oaknut

@@ -20,12 +20,12 @@ public:
     // some code blocks are constructed during static initialization. On Apple
     // hosts, presence of DYNARMIC_DUAL_MAPPED opts into separate RW and RX
     // aliases. Other hosts retain their existing single-mapping behavior.
-    explicit ConfigurableCodeBlock(std::size_t size)
-        : ConfigurableCodeBlock(size, std::getenv("DYNARMIC_DUAL_MAPPED") != nullptr) {}
-
-    ConfigurableCodeBlock(std::size_t size, bool use_dual_mapping)
-    {
+    explicit ConfigurableCodeBlock(std::size_t size) {
 #if defined(__APPLE__)
+        bool use_dual_mapping = std::getenv("DYNARMIC_DUAL_MAPPED") != nullptr;
+        if (__builtin_available(iOS 19.0, *))
+            // Quick and dirty way to check if we're running on iOS...
+            use_dual_mapping = ::access("/private/preboot", F_OK) == 0;
         if (use_dual_mapping) {
             m_dual_code = std::make_unique<DualCodeBlock>(round_page(size));
             return;
