@@ -29,7 +29,7 @@
 #if defined(MCL_ARCHITECTURE_X86_64)
 #    include "dynarmic/backend/x64/block_of_code.h"
 #elif defined(MCL_ARCHITECTURE_ARM64)
-#    include <oaknut/code_block.hpp>
+#    include <oaknut/configurable_code_block.hpp>
 
 #    include "dynarmic/backend/arm64/abi.h"
 #elif defined(MCL_ARCHITECTURE_RISCV)
@@ -307,8 +307,8 @@ void ExceptionHandler::Register(X64::BlockOfCode& code) {
     impl = std::make_unique<Impl>(code_begin, code_end);
 }
 #elif defined(MCL_ARCHITECTURE_ARM64)
-void ExceptionHandler::Register(oaknut::CodeBlock& mem, std::size_t size) {
-    const u64 code_begin = mcl::bit_cast<u64>(mem.ptr());
+void ExceptionHandler::Register(oaknut::ConfigurableCodeBlock& mem, std::size_t size) {
+    const u64 code_begin = mcl::bit_cast<u64>(mem.xptr());
     const u64 code_end = code_begin + size;
     impl = std::make_unique<Impl>(code_begin, code_end);
 }

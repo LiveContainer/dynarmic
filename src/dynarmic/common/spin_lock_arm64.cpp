@@ -5,7 +5,7 @@
 
 #include <mutex>
 
-#include <oaknut/code_block.hpp>
+#include <oaknut/configurable_code_block.hpp>
 #include <oaknut/oaknut.hpp>
 
 #include "dynarmic/backend/arm64/abi.h"
@@ -42,7 +42,7 @@ struct SpinLockImpl {
 
     void Initialize();
 
-    oaknut::CodeBlock mem;
+    oaknut::ConfigurableCodeBlock mem;
     oaknut::CodeGenerator code;
 
     void (*lock)(volatile int*);
@@ -54,7 +54,7 @@ SpinLockImpl impl;
 
 SpinLockImpl::SpinLockImpl()
         : mem{4096}
-        , code{mem.ptr(), mem.ptr()} {}
+        , code{mem.wptr(), mem.xptr()} {}
 
 void SpinLockImpl::Initialize() {
     mem.unprotect();

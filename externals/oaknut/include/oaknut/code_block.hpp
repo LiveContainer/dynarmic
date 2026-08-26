@@ -4,9 +4,11 @@
 #pragma once
 
 #include <algorithm>
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <new>
+#include <system_error>
 
 #if defined(_WIN32)
 #    define NOMINMAX
@@ -44,6 +46,10 @@ public:
         m_memory = (std::uint32_t*)mmap(nullptr, size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_ANON | MAP_PRIVATE, -1, 0);
 #endif
 
+#if !defined(_WIN32)
+        if (m_memory == MAP_FAILED)
+            m_memory = nullptr;
+#endif
         if (m_memory == nullptr)
             throw std::bad_alloc{};
     }
@@ -75,7 +81,9 @@ public:
 #if defined(__APPLE__) && !TARGET_OS_IPHONE
         pthread_jit_write_protect_np(1);
 #elif defined(__APPLE__) || defined(__NetBSD__) || defined(__OpenBSD__)
-        mprotect(m_memory, m_size, PROT_READ | PROT_EXEC);
+        if (mprotect(m_memory, m_size, PROT_READ | PROT_EXEC) != 0) {
+            throw std::system_error{errno, std::generic_category(), "mprotect RX"};
+        }
 #endif
     }
 
@@ -84,7 +92,9 @@ public:
 #if defined(__APPLE__) && !TARGET_OS_IPHONE
         pthread_jit_write_protect_np(0);
 #elif defined(__APPLE__) || defined(__NetBSD__) || defined(__OpenBSD__)
-        mprotect(m_memory, m_size, PROT_READ | PROT_WRITE);
+        if (mprotect(m_memory, m_size, PROT_READ | PROT_WRITE) != 0) {
+            throw std::system_error{errno, std::generic_category(), "mprotect RW"};
+        }
 #endif
     }
 

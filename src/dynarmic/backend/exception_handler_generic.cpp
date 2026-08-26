@@ -18,7 +18,7 @@ void ExceptionHandler::Register(X64::BlockOfCode&) {
     // Do nothing
 }
 #elif defined(MCL_ARCHITECTURE_ARM64)
-void ExceptionHandler::Register(oaknut::CodeBlock&, std::size_t) {
+void ExceptionHandler::Register(oaknut::ConfigurableCodeBlock&, std::size_t) {
     // Do nothing
 }
 #elif defined(MCL_ARCHITECTURE_RISCV)

@@ -45,12 +45,20 @@ public:
         if (m_wmem == MAP_FAILED)
             throw std::bad_alloc{};
 
+        vm_address_t executable_address = 0;
         vm_prot_t cur_prot, max_prot;
-        kern_return_t ret = vm_remap(mach_task_self(), (vm_address_t*)&m_xmem, size, 0, VM_FLAGS_ANYWHERE | VM_FLAGS_RANDOM_ADDR, mach_task_self(), (mach_vm_address_t)m_wmem, false, &cur_prot, &max_prot, VM_INHERIT_NONE);
-        if (ret != KERN_SUCCESS)
+        kern_return_t ret = vm_remap(mach_task_self(), &executable_address, size, 0, VM_FLAGS_ANYWHERE | VM_FLAGS_RANDOM_ADDR, mach_task_self(), reinterpret_cast<vm_address_t>(m_wmem), false, &cur_prot, &max_prot, VM_INHERIT_NONE);
+        if (ret != KERN_SUCCESS) {
+            munmap(m_wmem, m_size);
             throw std::bad_alloc{};
+        }
+        m_xmem = reinterpret_cast<std::uint32_t*>(executable_address);
 
-        mprotect(m_xmem, size, PROT_READ | PROT_EXEC);
+        if (mprotect(m_xmem, size, PROT_READ | PROT_EXEC) != 0) {
+            munmap(m_xmem, m_size);
+            munmap(m_wmem, m_size);
+            throw std::bad_alloc{};
+        }
 #else
 #    if defined(__OpenBSD__)
         char tmpl[] = "oaknut_dual_code_block.XXXXXXXXXX";
@@ -81,6 +89,8 @@ public:
 #if defined(_WIN32)
         VirtualFree((void*)m_xmem, 0, MEM_RELEASE);
 #elif defined(__APPLE__)
+        munmap(m_xmem, m_size);
+        munmap(m_wmem, m_size);
 #else
         munmap(m_wmem, m_size);
         munmap(m_xmem, m_size);
