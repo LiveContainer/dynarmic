@@ -22,18 +22,18 @@ public:
     // aliases. Other hosts retain their existing single-mapping behavior.
     explicit ConfigurableCodeBlock(std::size_t size) {
 #if defined(__APPLE__)
+        const std::size_t allocation_size = round_page(size);
         bool use_dual_mapping = std::getenv("DYNARMIC_DUAL_MAPPED") != nullptr;
-        if (__builtin_available(iOS 19.0, *))
-            // Quick and dirty way to check if we're running on iOS...
-            use_dual_mapping = ::access("/private/preboot", F_OK) == 0;
+        if (!use_dual_mapping)
+            use_dual_mapping = detail::RunningOnIOS26OrLater();
         if (use_dual_mapping) {
-            m_dual_code = std::make_unique<DualCodeBlock>(round_page(size));
+            m_dual_code = std::make_unique<DualCodeBlock>(allocation_size);
             return;
         }
+        m_single_code = std::make_unique<CodeBlock>(allocation_size);
 #else
-        static_cast<void>(use_dual_mapping);
+        m_single_code = std::make_unique<CodeBlock>(size);
 #endif
-        m_single_code = std::make_unique<CodeBlock>(round_page(size));
     }
 
     ~ConfigurableCodeBlock() = default;

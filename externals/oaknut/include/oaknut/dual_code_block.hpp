@@ -14,6 +14,7 @@
 #elif defined(__APPLE__)
 #    include <mach/mach.h>
 #    include <mach/vm_map.h>
+#    include <mach-o/loader.h>
 
 #    include <CoreFoundation/CoreFoundation.h>
 #    include <IOKit/IOKitLib.h>
@@ -31,7 +32,27 @@
 #    include <unistd.h>
 #endif
 
+#if defined(__APPLE__)
+extern "C" std::uint32_t dyld_get_active_platform(void);
+#endif
+
 namespace oaknut {
+
+#if defined(__APPLE__)
+namespace detail {
+
+inline bool RunningOnIOS26OrLater()
+{
+    if (dyld_get_active_platform() != PLATFORM_IOS)
+        return false;
+
+    if (__builtin_available(iOS 19.0, *))
+        return true;
+    return false;
+}
+
+}  // namespace detail
+#endif
 
 class DualCodeBlock {
 public:
@@ -47,11 +68,7 @@ public:
         if (m_xmem == MAP_FAILED)
             throw std::bad_alloc{};
 
-        bool runningOnIOS26 = false;
-        if (__builtin_available(iOS 19.0, *))
-            // Quick and dirty way to check if we're running on iOS...
-            runningOnIOS26 = ::access("/private/preboot", F_OK) == 0;
-        if (runningOnIOS26 && DeviceHasTXM())
+        if (detail::RunningOnIOS26OrLater() && DeviceHasTXM())
             JIT26PrepareRegion(m_xmem, m_size);
 
         vm_address_t wmem = 0;
