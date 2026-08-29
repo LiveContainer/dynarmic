@@ -41,9 +41,13 @@ namespace oaknut {
 #if defined(__APPLE__)
 namespace detail {
 
-inline bool RunningOnIOS26OrLater()
+inline bool RequiresDualMapping()
 {
     if (dyld_get_active_platform() != PLATFORM_IOS)
+        return false;
+
+    // Skip dual mapping on jailbroken devices(?)
+    if (::access("/usr/lib/systemhook.dylib", F_OK) == 0)
         return false;
 
     if (__builtin_available(iOS 19.0, *))
@@ -68,7 +72,7 @@ public:
         if (m_xmem == MAP_FAILED)
             throw std::bad_alloc{};
 
-        if (detail::RunningOnIOS26OrLater() && DeviceHasTXM())
+        if (detail::RequiresDualMapping() && DeviceHasTXM())
             JIT26PrepareRegion(m_xmem, m_size);
 
         vm_address_t wmem = 0;

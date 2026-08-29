@@ -25,7 +25,7 @@ public:
         const std::size_t allocation_size = round_page(size);
         bool use_dual_mapping = std::getenv("DYNARMIC_DUAL_MAPPED") != nullptr;
         if (!use_dual_mapping)
-            use_dual_mapping = detail::RunningOnIOS26OrLater();
+            use_dual_mapping = detail::RequiresDualMapping();
         if (use_dual_mapping) {
             m_dual_code = std::make_unique<DualCodeBlock>(allocation_size);
             return;
