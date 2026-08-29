@@ -2737,7 +2737,10 @@ template <typename Char, typename... Args> class basic_format_string {
                   detail::count_statically_named_args<Args...>()) {
       using checker =
           detail::format_string_checker<Char, remove_cvref_t<Args>...>;
-      detail::parse_format_string<true>(str_, checker(s));
+      // Keep the checker on the same stored view as the parser. Apple Clang
+      // 21 rejects subtracting pointers from the original FMT_STRING wrapper
+      // and str_ while evaluating this constructor as consteval.
+      detail::parse_format_string<true>(str_, checker(str_));
     }
 #else
     detail::check_format_string<Args...>(s);
