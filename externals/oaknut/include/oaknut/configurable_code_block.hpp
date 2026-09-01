@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstring>
 #include <cstdlib>
 #include <memory>
 
@@ -18,13 +19,17 @@ class ConfigurableCodeBlock {
 public:
     // The environment must be configured before Dynarmic is loaded because
     // some code blocks are constructed during static initialization. On Apple
-    // hosts, presence of DYNARMIC_DUAL_MAPPED opts into separate RW and RX
-    // aliases. Other hosts retain their existing single-mapping behavior.
+    // hosts, a nonzero DYNARMIC_DUAL_MAPPED value opts into separate RW and RX
+    // aliases, while "0" opts out. Other hosts retain single mapping.
     explicit ConfigurableCodeBlock(std::size_t size) {
 #if defined(__APPLE__)
         const std::size_t allocation_size = round_page(size);
-        bool use_dual_mapping = std::getenv("DYNARMIC_DUAL_MAPPED") != nullptr;
-        if (!use_dual_mapping)
+        const char* const dual_mapping =
+            std::getenv("DYNARMIC_DUAL_MAPPED");
+        bool use_dual_mapping = dual_mapping != nullptr &&
+            dual_mapping[0] != '\0' &&
+            std::strcmp(dual_mapping, "0") != 0;
+        if (dual_mapping == nullptr)
             use_dual_mapping = detail::RequiresDualMapping();
         if (use_dual_mapping) {
             m_dual_code = std::make_unique<DualCodeBlock>(allocation_size);

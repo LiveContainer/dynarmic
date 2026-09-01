@@ -41,18 +41,31 @@ namespace oaknut {
 #if defined(__APPLE__)
 namespace detail {
 
+inline bool RunningOnPhysicalIOS()
+{
+    return dyld_get_active_platform() == PLATFORM_IOS;
+}
+
+inline bool RunningOnIOS26OrLater()
+{
+    if (!RunningOnPhysicalIOS())
+        return false;
+
+    if (__builtin_available(iOS 19.0, *))
+        return true;
+    return false;
+}
+
 inline bool RequiresDualMapping()
 {
-    if (dyld_get_active_platform() != PLATFORM_IOS)
+    if (!RunningOnPhysicalIOS())
         return false;
 
     // Skip dual mapping on jailbroken devices(?)
     if (::access("/usr/lib/systemhook.dylib", F_OK) == 0)
         return false;
 
-    if (__builtin_available(iOS 19.0, *))
-        return true;
-    return false;
+    return RunningOnIOS26OrLater();
 }
 
 }  // namespace detail
@@ -72,8 +85,15 @@ public:
         if (m_xmem == MAP_FAILED)
             throw std::bad_alloc{};
 
-        if (detail::RequiresDualMapping() && DeviceHasTXM())
-            JIT26PrepareRegion(m_xmem, m_size);
+        if (DeviceHasTXM()) {
+            if (detail::RunningOnIOS26OrLater()) {
+                JIT26PrepareRegion(m_xmem, m_size);
+            } else if (detail::RunningOnPhysicalIOS() &&
+                       !PreparePreIOS26TXMRegion()) {
+                munmap(m_xmem, m_size);
+                throw std::bad_alloc{};
+            }
+        }
 
         vm_address_t wmem = 0;
         vm_prot_t cur_prot, max_prot;
@@ -202,6 +222,27 @@ protected:
     std::size_t m_size = 0;
 
 #if defined(__APPLE__)
+    bool PreparePreIOS26TXMRegion() const {
+        // iOS 17 and 18 require every page in the executable backing to be
+        // materialized before vm_remap creates its writable alias.  Retain
+        // W^X while doing so: fault the pages through a temporary RW mapping,
+        // then restore the original RX protection before continuing.
+        if (mprotect(m_xmem, m_size, PROT_READ | PROT_WRITE) != 0)
+            return false;
+
+        volatile std::uint8_t* const bytes =
+            reinterpret_cast<volatile std::uint8_t*>(m_xmem);
+        const std::size_t page_size =
+            static_cast<std::size_t>(getpagesize());
+        for (std::size_t offset = 0; offset < m_size;
+             offset += page_size) {
+            const std::uint8_t value = bytes[offset];
+            bytes[offset] = value;
+        }
+
+        return mprotect(m_xmem, m_size, PROT_READ | PROT_EXEC) == 0;
+    }
+
     bool DeviceHasTXM() const {
         // https://github.com/opa334/Dopamine/commit/e8438b4a64ead3997d2c70a575431cb1b4070fb9
         io_registry_entry_t memory_map = IORegistryEntryFromPath(0, "IODeviceTree:/chosen/memory-map");
