@@ -41,6 +41,11 @@ namespace oaknut {
 #if defined(__APPLE__)
 namespace detail {
 
+inline bool IsProbablyJailbroken()
+{
+    return ::access("/usr/lib/systemhook.dylib", F_OK) == 0;
+}
+
 inline bool RunningOnPhysicalIOS()
 {
     return dyld_get_active_platform() == PLATFORM_IOS;
@@ -62,7 +67,7 @@ inline bool RequiresDualMapping()
         return false;
 
     // Skip dual mapping on jailbroken devices(?)
-    if (::access("/usr/lib/systemhook.dylib", F_OK) == 0)
+    if (IsProbablyJailbroken())
         return false;
 
     return RunningOnIOS26OrLater();
@@ -86,7 +91,7 @@ public:
             throw std::bad_alloc{};
 
         if (DeviceHasTXM()) {
-            if (detail::RunningOnIOS26OrLater()) {
+            if (detail::RunningOnIOS26OrLater() && !detail::IsProbablyJailbroken()) {
                 JIT26PrepareRegion(m_xmem, m_size);
             } else if (detail::RunningOnPhysicalIOS() &&
                        !PreparePreIOS26TXMRegion()) {
